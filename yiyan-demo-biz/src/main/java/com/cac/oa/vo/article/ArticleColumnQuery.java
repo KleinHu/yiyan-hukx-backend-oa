@@ -19,4 +19,7 @@ public class ArticleColumnQuery extends PageParam {
 
     @ApiModelProperty("状态(1-启用 0-停用)")
     private Integer status;
+
+    @ApiModelProperty("是否首页展示(1-展示 0-不展示)")
+    private Integer isHomeShow;
 }

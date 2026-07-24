@@ -46,4 +46,14 @@ public class ArticleColumnEntity extends BaseEntity {
      * 状态 (1-启用 0-停用)
      */
     private Integer status;
+
+    /**
+     * 是否首页展示 (1-展示 0-不展示)
+     */
+    private Integer isHomeShow;
+
+    /**
+     * 首页排序号
+     */
+    private Integer homeSort;
 }

@@ -32,6 +32,8 @@ public class ArticleColumnServiceImpl extends ServiceImpl<ArticleColumnMapper, A
         PageData<ArticleColumnEntity> page = columnMapper.selectPage(query, new LambdaQueryWrapperX<ArticleColumnEntity>()
                 .likeIfPresent(ArticleColumnEntity::getName, query.getName())
                 .eqIfPresent(ArticleColumnEntity::getStatus, query.getStatus())
+                .eqIfPresent(ArticleColumnEntity::getIsHomeShow, query.getIsHomeShow())
+                .orderByAsc(ArticleColumnEntity::getHomeSort)
                 .orderByAsc(ArticleColumnEntity::getSortOrder)
                 .orderByDesc(ArticleColumnEntity::getCreateTime));
         return converter.convertPage(page);
@@ -51,6 +53,8 @@ public class ArticleColumnServiceImpl extends ServiceImpl<ArticleColumnMapper, A
         List<ArticleColumnEntity> list = columnMapper.selectList(new LambdaQueryWrapperX<ArticleColumnEntity>()
                 .likeIfPresent(ArticleColumnEntity::getName, query.getName())
                 .eqIfPresent(ArticleColumnEntity::getStatus, query.getStatus())
+                .eqIfPresent(ArticleColumnEntity::getIsHomeShow, query.getIsHomeShow())
+                .orderByAsc(ArticleColumnEntity::getHomeSort)
                 .orderByAsc(ArticleColumnEntity::getSortOrder));
         
         List<ArticleColumnVO> voList = converter.convertList(list);

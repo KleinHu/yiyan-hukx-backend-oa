@@ -1,5 +1,5 @@
 server:
-  port: 10009
+  port: 10010
 
 spring:
   main:
@@ -15,11 +15,16 @@ spring:
       strict: false #严格匹配数据源,默认false. true未匹配到指定数据源时抛异常,false使用默认数据源
       datasource:
         master:
-          driver-class-name: com.mysql.cj.jdbc.Driver
-          #          url: jdbc:mysql://hukx-Macmini.local:3307/240_hr?useUnicode=true&characterEncoding=utf8&serverTimezone=GMT%2B8&useSSL=false&allowMultiQueries=true
-          url: jdbc:mysql://hukx-Macmini.local:3307/240_oa?useUnicode=true&characterEncoding=utf8&serverTimezone=GMT%2B8&useSSL=false&allowMultiQueries=true
-          username: root
-          password: yiyan
+          driver-class-name: dm.jdbc.driver.DmDriver
+          # MySQL 配置保留，便于随时切回
+          #          driver-class-name: com.mysql.cj.jdbc.Driver
+          #          url: jdbc:mysql://162.14.102.209:3306/240_hr?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true
+          #          url: jdbc:mysql://hukx-Macmini.local:3307/240_em?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowMultiQueries=true
+          #          username: root
+          #          password: yiyan
+          url: jdbc:dm://hukx-Macmini.local:5236
+          username: "240OA"
+          password: SysdbA123
   # 服务注册
   cloud:
     nacos:

@@ -5,8 +5,7 @@ spring:
     # nacos配置管理
     nacos:
       config:
-#        server-addr: hukx-Macmini.local:8848
-        server-addr: 162.14.102.209:8848
+        server-addr: hukx-Macmini.local:8848
 
         # Nacos 认证用户（根据实际 Nacos 服务器配置修改）
         username: nacos
