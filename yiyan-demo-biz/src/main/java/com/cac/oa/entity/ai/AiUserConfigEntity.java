@@ -36,4 +36,10 @@ public class AiUserConfigEntity extends BaseEntity {
 
     /** The last time the locally persisted model cache was refreshed from the gateway. */
     private Date modelCacheUpdatedAt;
+
+    /** Maximum input tokens accepted by the configured gateway for one request. */
+    private Integer maxInputTokens;
+
+    /** Model context window (input plus output), kept as a gateway-level guardrail. */
+    private Integer contextWindowTokens;
 }

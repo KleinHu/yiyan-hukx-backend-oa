@@ -8,4 +8,6 @@ public class AiConfigVO {
     private String defaultModel;
     private Boolean apiKeyConfigured;
     private String apiKeySuffix;
+    private Integer maxInputTokens;
+    private Integer contextWindowTokens;
 }

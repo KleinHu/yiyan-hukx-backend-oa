@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -85,6 +87,26 @@ public class AiAssistantController {
     @ApiOperation("使用当前用户的网关流式发起对话")
     public ResponseEntity<StreamingResponseBody> streamChat(@RequestBody AiChatRequest request) {
         AiChatStreamContext context = chatService.startStream(request);
+        return streamResponse(context);
+    }
+
+    @PostMapping(value = "/chat/stream/attachment", consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @ApiOperation("携带单个附件流式发起 AI 对话")
+    public ResponseEntity<StreamingResponseBody> streamChatWithAttachment(
+            @RequestPart("request") AiChatRequest request, @RequestPart("file") List<MultipartFile> files) {
+        AiChatStreamContext context = chatService.startStreamWithAttachment(request, requireSingleAttachment(files));
+        return streamResponse(context);
+    }
+
+    static MultipartFile requireSingleAttachment(List<MultipartFile> files) {
+        if (files == null || files.size() != 1) {
+            throw new IllegalArgumentException("一次只能上传 1 个附件");
+        }
+        return files.get(0);
+    }
+
+    private ResponseEntity<StreamingResponseBody> streamResponse(AiChatStreamContext context) {
         HttpHeaders headers = new HttpHeaders();
         headers.setCacheControl("no-cache");
         headers.add("X-Accel-Buffering", "no");
@@ -143,7 +165,7 @@ public class AiAssistantController {
         if (failure != null) {
             Map<String, Object> error = new HashMap<String, Object>();
             error.put("message", "AI 回复已中断，已保留当前内容。请稍后重试。");
-            error.put("retryable", true);
+            error.put("retryable", !context.isAttachmentRequest());
             try {
                 writeSse(output, "error", error);
             } catch (IOException ignored) {

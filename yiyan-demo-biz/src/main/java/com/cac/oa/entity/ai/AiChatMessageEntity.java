@@ -21,4 +21,8 @@ public class AiChatMessageEntity extends BaseEntity {
     private String role;
     @TableField(jdbcType = JdbcType.CLOB)
     private String content;
+    private String attachmentName;
+    private String attachmentPath;
+    private Long attachmentSize;
+    private String attachmentContentType;
 }

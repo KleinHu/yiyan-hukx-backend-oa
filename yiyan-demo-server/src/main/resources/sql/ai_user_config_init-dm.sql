@@ -7,6 +7,8 @@ CREATE TABLE "oa_ai_user_config" (
   "api_key_encrypted" VARCHAR(2048) NOT NULL,
   "default_model" VARCHAR(256),
   "model_cache_updated_at" DATETIME,
+  "max_input_tokens" INT,
+  "context_window_tokens" INT,
   "creator" VARCHAR(64),
   "create_time" DATETIME DEFAULT CURRENT_TIMESTAMP,
   "updater" VARCHAR(64),

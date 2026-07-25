@@ -6,4 +6,5 @@ import lombok.Data;
 public class AiChatHistoryMessageVO {
     private String role;
     private String content;
+    private AiChatAttachmentVO attachment;
 }

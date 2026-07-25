@@ -15,15 +15,17 @@ public class AiChatStreamContext {
     private final String baseUrl;
     private final String apiKey;
     private final List<Map<String, String>> messages;
+    private final boolean attachmentRequest;
 
     public AiChatStreamContext(Long userId, Long sessionId, String model,
-            String baseUrl, String apiKey, List<Map<String, String>> messages) {
+            String baseUrl, String apiKey, List<Map<String, String>> messages, boolean attachmentRequest) {
         this.userId = userId;
         this.sessionId = sessionId;
         this.model = model;
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.messages = messages;
+        this.attachmentRequest = attachmentRequest;
     }
 
     public Long getUserId() {
@@ -48,5 +50,9 @@ public class AiChatStreamContext {
 
     public List<Map<String, String>> getMessages() {
         return messages;
+    }
+
+    public boolean isAttachmentRequest() {
+        return attachmentRequest;
     }
 }

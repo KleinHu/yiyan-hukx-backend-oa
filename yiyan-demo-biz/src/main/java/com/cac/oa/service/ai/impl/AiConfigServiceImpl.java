@@ -7,6 +7,7 @@ import com.cac.oa.entity.ai.AiUserConfigEntity;
 import com.cac.oa.entity.ai.AiUserModelEntity;
 import com.cac.oa.service.ai.AiConfigService;
 import com.cac.oa.service.ai.OpenAiGatewayClient;
+import com.cac.oa.service.ai.AiChatTokenBudget;
 import com.cac.oa.vo.ai.AiConfigSaveRequest;
 import com.cac.oa.vo.ai.AiConfigVO;
 import com.cac.oa.vo.ai.AiGatewayDiscoverRequest;
@@ -56,6 +57,10 @@ public class AiConfigServiceImpl extends ServiceImpl<AiUserConfigMapper, AiUserC
         String baseUrl = gatewayClient.normalizeBaseUrl(request.getBaseUrl());
         String apiKey = trimToNull(request.getApiKey());
         entity.setBaseUrl(baseUrl);
+        int contextWindowTokens = resolveContextWindowTokens(request.getContextWindowTokens());
+        resolveMaxInputTokens(request.getMaxInputTokens(), contextWindowTokens);
+        entity.setContextWindowTokens(request.getContextWindowTokens());
+        entity.setMaxInputTokens(request.getMaxInputTokens());
         List<AiModelVO> selectedModels = normalizeSelectedModels(request.getModels());
         entity.setDefaultModel(selectDefaultModel(request.getDefaultModel(), selectedModels));
         if (apiKey != null) {
@@ -258,20 +263,41 @@ public class AiConfigServiceImpl extends ServiceImpl<AiUserConfigMapper, AiUserC
         return userId;
     }
 
-    private AiConfigVO toConfigVO(AiUserConfigEntity entity) {
+    static AiConfigVO toConfigVO(AiUserConfigEntity entity) {
         AiConfigVO result = new AiConfigVO();
         if (entity == null) {
             result.setApiKeyConfigured(false);
+            result.setMaxInputTokens(AiChatTokenBudget.DEFAULT_MAX_INPUT_TOKENS);
+            result.setContextWindowTokens(AiChatTokenBudget.DEFAULT_CONTEXT_WINDOW_TOKENS);
             return result;
         }
         result.setBaseUrl(entity.getBaseUrl());
         result.setDefaultModel(entity.getDefaultModel());
         result.setApiKeyConfigured(trimToNull(entity.getApiKey()) != null);
         result.setApiKeySuffix(result.getApiKeyConfigured() ? "已保存" : null);
+        result.setMaxInputTokens(resolveMaxInputTokens(entity.getMaxInputTokens(),
+                resolveContextWindowTokens(entity.getContextWindowTokens())));
+        result.setContextWindowTokens(resolveContextWindowTokens(entity.getContextWindowTokens()));
         return result;
     }
 
-    private String trimToNull(String value) {
+    private static int resolveContextWindowTokens(Integer value) {
+        int result = value == null ? AiChatTokenBudget.DEFAULT_CONTEXT_WINDOW_TOKENS : value;
+        if (result < 1024 || result > 1048576) {
+            throw new IllegalArgumentException("模型上下文大小需在 1024 到 1048576 Token 之间");
+        }
+        return result;
+    }
+
+    private static int resolveMaxInputTokens(Integer value, int contextWindowTokens) {
+        int result = value == null ? AiChatTokenBudget.DEFAULT_MAX_INPUT_TOKENS : value;
+        if (result < 256 || result > contextWindowTokens) {
+            throw new IllegalArgumentException("单次请求最大输入 Token 需在 256 到模型上下文大小之间");
+        }
+        return result;
+    }
+
+    private static String trimToNull(String value) {
         return value == null || value.trim().isEmpty() ? null : value.trim();
     }
 }
