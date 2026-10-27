@@ -2,7 +2,9 @@ package com.cac.oa.routine.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.cac.oa.routine.entity.RoutineMeetingPlanEntity;
+import com.cac.oa.routine.vo.RoutineMeetingPlanCompletedDateRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanExtendRequest;
+import com.cac.oa.routine.vo.RoutineMeetingPlanFeedbackDateRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanFeedbackRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanQuery;
 import com.cac.oa.routine.vo.RoutineMeetingPlanSaveRequest;
@@ -28,4 +30,8 @@ public interface IRoutineMeetingPlanService extends IService<RoutineMeetingPlanE
     void extend(Long id, RoutineMeetingPlanExtendRequest request);
 
     void feedback(Long id, RoutineMeetingPlanFeedbackRequest request);
+
+    void correctFeedbackDate(Long id, RoutineMeetingPlanFeedbackDateRequest request);
+
+    void correctCompletedDate(Long id, RoutineMeetingPlanCompletedDateRequest request);
 }

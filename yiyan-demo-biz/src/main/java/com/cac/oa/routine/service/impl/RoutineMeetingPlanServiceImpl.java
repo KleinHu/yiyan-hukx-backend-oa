@@ -4,11 +4,15 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cac.oa.routine.dao.RoutineMeetingPlanMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.cac.oa.routine.dao.RoutineMeetingPlanWeekMapper;
 import com.cac.oa.routine.entity.RoutineMeetingPlanEntity;
 import com.cac.oa.routine.entity.RoutineMeetingPlanWeekEntity;
 import com.cac.oa.routine.service.IRoutineMeetingPlanService;
+import com.cac.oa.routine.vo.RoutineMeetingPlanCompletedDateRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanExtendRequest;
+import com.cac.oa.routine.vo.RoutineMeetingPlanFeedbackDateRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanFeedbackRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanQuery;
 import com.cac.oa.routine.vo.RoutineMeetingPlanSaveRequest;
@@ -19,10 +23,14 @@ import com.cac.yiyan.common.page.PageData;
 import com.cac.yiyan.security.core.user.UserDetailsImpl;
 import com.cac.yiyan.security.core.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -31,12 +39,14 @@ import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -51,8 +61,14 @@ public class RoutineMeetingPlanServiceImpl
     private static final String COMPLETED_ON_TIME = "COMPLETED_ON_TIME";
     private static final String COMPLETED_OVERDUE = "COMPLETED_OVERDUE";
     private static final Set<String> ADMIN_ROLE_IDS = new HashSet<>(Arrays.asList("2", "4"));
+    private static final String SUPER_ADMIN_ROLE = "240-oa-routine-super-admin";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final Map<String, SuperAdminCache> SUPER_ADMIN_CACHE = new ConcurrentHashMap<>();
 
     private final RoutineMeetingPlanWeekMapper weekMapper;
+
+    @Value("${yiyan.security.token-info-uri:}")
+    private String tokenInfoUri;
 
     @Override
     public PageData<RoutineMeetingPlanVO> page(RoutineMeetingPlanQuery query) {
@@ -240,6 +256,9 @@ public class RoutineMeetingPlanServiceImpl
         if (week == null) {
             throw new ServiceException("该周不在计划周期内");
         }
+        if (request.getProgress() != null && request.getProgress() == 100) {
+            assertNoEarlierMissingWeeks(id, weekStart);
+        }
 
         if (week.getFirstFeedbackAt() == null) {
             week.setFirstFeedbackAt(new Date());
@@ -251,6 +270,65 @@ public class RoutineMeetingPlanServiceImpl
         weekMapper.updateById(week);
 
         recalcPlan(plan);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void correctFeedbackDate(Long id, RoutineMeetingPlanFeedbackDateRequest request) {
+        ensureSuperAdmin();
+        RoutineMeetingPlanEntity plan = getPlan(id);
+        LocalDate weekStart = normalizeMonday(request.getWeekStart());
+        RoutineMeetingPlanWeekEntity week = weekMapper.selectOne(
+                new LambdaQueryWrapper<RoutineMeetingPlanWeekEntity>()
+                        .eq(RoutineMeetingPlanWeekEntity::getPlanId, id)
+                        .eq(RoutineMeetingPlanWeekEntity::getWeekStart, weekStart));
+        if (week == null || week.getFirstFeedbackAt() == null) {
+            throw new ServiceException("该周还没有反馈记录，不能校正");
+        }
+        LocalDate actualDate = request.getActualDate();
+        if (actualDate.isBefore(week.getWeekStart())) {
+            throw new ServiceException("实际反馈日期不能早于该周开始日期");
+        }
+        if (actualDate.isAfter(today())) {
+            throw new ServiceException("实际反馈日期不能晚于今天");
+        }
+        if (week.getProgress() != null && week.getProgress() == 100) {
+            assertNoEarlierMissingWeeks(id, weekStart);
+        }
+        Date newFeedbackAt = combineDate(week.getFirstFeedbackAt(), actualDate);
+        week.setFirstFeedbackAt(newFeedbackAt);
+        weekMapper.updateById(week);
+
+        if (plan.getCompletedAt() != null
+                && week.getProgress() != null
+                && week.getProgress() == 100
+                && isLatestFeedbackWeek(id, weekStart)) {
+            plan.setCompletedAt(combineDate(plan.getCompletedAt(), actualDate));
+            baseMapper.updateById(plan);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void correctCompletedDate(Long id, RoutineMeetingPlanCompletedDateRequest request) {
+        ensureSuperAdmin();
+        RoutineMeetingPlanEntity plan = getPlan(id);
+        if (plan.getCompletedAt() == null) {
+            throw new ServiceException("只有已完成计划可以校正完成日期");
+        }
+        LocalDate completedDate = request.getCompletedDate();
+        if (completedDate.isAfter(today())) {
+            throw new ServiceException("完成日期不能晚于今天");
+        }
+        Date lastFeedback = latestFeedbackDate(id);
+        if (lastFeedback == null) {
+            throw new ServiceException("计划没有反馈记录，不能校正完成日期");
+        }
+        if (completedDate.isBefore(toLocalDate(lastFeedback))) {
+            throw new ServiceException("完成日期不能早于最后反馈日期");
+        }
+        plan.setCompletedAt(combineDate(plan.getCompletedAt(), completedDate));
+        baseMapper.updateById(plan);
     }
 
     private LambdaQueryWrapper<RoutineMeetingPlanEntity> buildQueryWrapper(RoutineMeetingPlanQuery query) {
@@ -277,7 +355,7 @@ public class RoutineMeetingPlanServiceImpl
     }
 
     private void applyVisibility(LambdaQueryWrapper<RoutineMeetingPlanEntity> wrapper) {
-        if (isAdmin()) {
+        if (isAdmin() || isSuperAdmin()) {
             return;
         }
         String userId = currentUserId();
@@ -573,7 +651,7 @@ public class RoutineMeetingPlanServiceImpl
 
     private void assertVisible(RoutineMeetingPlanEntity plan) {
         if (Integer.valueOf(1).equals(plan.getDraft())
-                && !isAdmin() && !isCreator(plan) && !isLeader(plan)) {
+                && !isAdmin() && !isSuperAdmin() && !isCreator(plan) && !isLeader(plan)) {
             throw new ServiceException("无权查看该草稿");
         }
     }
@@ -762,6 +840,132 @@ public class RoutineMeetingPlanServiceImpl
         }
     }
 
+    private boolean isSuperAdmin() {
+        try {
+            UserDetailsImpl details = SecurityUtils.getUserDetails();
+            if (details != null) {
+                if (details.getRoleIds() != null
+                        && details.getRoleIds().contains(SUPER_ADMIN_ROLE)) {
+                    return true;
+                }
+                if (details.getAuthorities() != null
+                        && details.getAuthorities().stream().anyMatch(authority ->
+                        SUPER_ADMIN_ROLE.equals(authority.getAuthority())
+                                || ("ROLE_" + SUPER_ADMIN_ROLE).equals(authority.getAuthority()))) {
+                    return true;
+                }
+            }
+            String token = SecurityUtils.obtainBearerToken();
+            if (!StringUtils.hasText(token)) {
+                return false;
+            }
+            long now = System.currentTimeMillis();
+            SuperAdminCache cache = SUPER_ADMIN_CACHE.get(token);
+            if (cache != null && cache.expiresAt > now) {
+                return cache.superAdmin;
+            }
+            boolean result = fetchSuperAdmin(token);
+            if (SUPER_ADMIN_CACHE.size() > 500) {
+                SUPER_ADMIN_CACHE.clear();
+            }
+            SUPER_ADMIN_CACHE.put(token, new SuperAdminCache(result, now + 60000));
+            return result;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean fetchSuperAdmin(String token) {
+        if (!StringUtils.hasText(tokenInfoUri)) {
+            return false;
+        }
+        String base = tokenInfoUri;
+        int index = base.indexOf("/oauth/check_token");
+        if (index > 0) {
+            base = base.substring(0, index);
+        }
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(base + "/api/system/permission/info");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(3000);
+            connection.setReadTimeout(3000);
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                return false;
+            }
+            try (InputStream inputStream = connection.getInputStream()) {
+                JsonNode roles = OBJECT_MAPPER.readTree(inputStream).path("data").path("roles");
+                if (roles.isArray()) {
+                    for (JsonNode role : roles) {
+                        if (SUPER_ADMIN_ROLE.equals(role.asText())) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+        return false;
+    }
+
+    private void ensureSuperAdmin() {
+        if (!isSuperAdmin()) {
+            throw new ServiceException("只有超级管理员可以校正历史数据");
+        }
+    }
+
+    private void assertNoEarlierMissingWeeks(Long planId, LocalDate weekStart) {
+        List<RoutineMeetingPlanWeekEntity> missingWeeks = weekMapper.selectList(
+                new LambdaQueryWrapper<RoutineMeetingPlanWeekEntity>()
+                        .eq(RoutineMeetingPlanWeekEntity::getPlanId, planId)
+                        .lt(RoutineMeetingPlanWeekEntity::getWeekStart, weekStart)
+                        .isNull(RoutineMeetingPlanWeekEntity::getFirstFeedbackAt)
+                        .orderByAsc(RoutineMeetingPlanWeekEntity::getWeekStart));
+        if (!missingWeeks.isEmpty()) {
+            String labels = missingWeeks.stream()
+                    .map(item -> formatWeek(item.getWeekStart(), item.getWeekEnd()))
+                    .collect(Collectors.joining("、"));
+            throw new ServiceException("前面还有未反馈的周：" + labels
+                    + "，请先补填后再提交100%");
+        }
+    }
+
+    private Date combineDate(Date existing, LocalDate date) {
+        Calendar calendar = Calendar.getInstance();
+        if (existing != null) {
+            calendar.setTime(existing);
+        }
+        calendar.set(Calendar.YEAR, date.getYear());
+        calendar.set(Calendar.MONTH, date.getMonthValue() - 1);
+        calendar.set(Calendar.DAY_OF_MONTH, date.getDayOfMonth());
+        return calendar.getTime();
+    }
+
+    private boolean isLatestFeedbackWeek(Long planId, LocalDate weekStart) {
+        List<RoutineMeetingPlanWeekEntity> weeks = weekMapper.selectList(
+                new LambdaQueryWrapper<RoutineMeetingPlanWeekEntity>()
+                        .eq(RoutineMeetingPlanWeekEntity::getPlanId, planId)
+                        .isNotNull(RoutineMeetingPlanWeekEntity::getFirstFeedbackAt)
+                        .orderByDesc(RoutineMeetingPlanWeekEntity::getWeekStart));
+        return !weeks.isEmpty() && weeks.get(0).getWeekStart().equals(weekStart);
+    }
+
+    private Date latestFeedbackDate(Long planId) {
+        List<RoutineMeetingPlanWeekEntity> weeks = weekMapper.selectList(
+                new LambdaQueryWrapper<RoutineMeetingPlanWeekEntity>()
+                        .eq(RoutineMeetingPlanWeekEntity::getPlanId, planId)
+                        .isNotNull(RoutineMeetingPlanWeekEntity::getFirstFeedbackAt)
+                        .orderByDesc(RoutineMeetingPlanWeekEntity::getWeekStart));
+        return weeks.isEmpty() ? null : weeks.get(0).getFirstFeedbackAt();
+    }
+
     private boolean isLeader(RoutineMeetingPlanEntity plan) {
         return equalsString(plan.getLeaderId(), currentUserId())
                 || equalsString(plan.getLeaderId(), currentUserCode());
@@ -773,5 +977,15 @@ public class RoutineMeetingPlanServiceImpl
 
     private boolean equalsString(String a, String b) {
         return a != null && a.equals(b);
+    }
+
+    private static class SuperAdminCache {
+        private final boolean superAdmin;
+        private final long expiresAt;
+
+        private SuperAdminCache(boolean superAdmin, long expiresAt) {
+            this.superAdmin = superAdmin;
+            this.expiresAt = expiresAt;
+        }
     }
 }

@@ -1,7 +1,9 @@
 package com.cac.oa.routine.controller;
 
 import com.cac.oa.routine.service.IRoutineMeetingPlanService;
+import com.cac.oa.routine.vo.RoutineMeetingPlanCompletedDateRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanExtendRequest;
+import com.cac.oa.routine.vo.RoutineMeetingPlanFeedbackDateRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanFeedbackRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanQuery;
 import com.cac.oa.routine.vo.RoutineMeetingPlanSaveRequest;
@@ -88,6 +90,24 @@ public class RoutineMeetingPlanController {
     public Result<Void> feedback(@PathVariable Long id,
                                  @Valid @RequestBody RoutineMeetingPlanFeedbackRequest request) {
         planService.feedback(id, request);
+        return Result.ok();
+    }
+
+    @PutMapping("/{id}/feedback-date")
+    @ApiOperation("校正周反馈实际日期")
+    public Result<Void> correctFeedbackDate(
+            @PathVariable Long id,
+            @Valid @RequestBody RoutineMeetingPlanFeedbackDateRequest request) {
+        planService.correctFeedbackDate(id, request);
+        return Result.ok();
+    }
+
+    @PutMapping("/{id}/completed-date")
+    @ApiOperation("校正计划实际完成日期")
+    public Result<Void> correctCompletedDate(
+            @PathVariable Long id,
+            @Valid @RequestBody RoutineMeetingPlanCompletedDateRequest request) {
+        planService.correctCompletedDate(id, request);
         return Result.ok();
     }
 }
