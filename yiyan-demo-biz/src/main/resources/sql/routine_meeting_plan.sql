@@ -2,7 +2,7 @@ CREATE TABLE ROUTINE_MEETING_PLAN
 (
     ID                BIGINT       NOT NULL,
     NAME              VARCHAR(180),
-    GOAL              VARCHAR(300),
+    GOAL               CLOB,
     LEADER_ID         VARCHAR(64),
     LEADER_NAME       VARCHAR(64),
     CREATOR_ID        VARCHAR(64),

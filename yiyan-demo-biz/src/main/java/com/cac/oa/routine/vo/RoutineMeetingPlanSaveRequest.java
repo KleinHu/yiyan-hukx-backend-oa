@@ -22,7 +22,6 @@ public class RoutineMeetingPlanSaveRequest implements Serializable {
     private String name;
 
     @ApiModelProperty("目标")
-    @Size(max = 100, message = "目标不能超过100字")
     private String goal;
 
     @ApiModelProperty("责任领导ID")

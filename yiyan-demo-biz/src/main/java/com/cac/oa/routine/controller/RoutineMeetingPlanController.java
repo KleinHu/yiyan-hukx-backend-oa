@@ -5,14 +5,19 @@ import com.cac.oa.routine.vo.RoutineMeetingPlanCompletedDateRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanExtendRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanFeedbackDateRequest;
 import com.cac.oa.routine.vo.RoutineMeetingPlanFeedbackRequest;
+import com.cac.oa.routine.vo.RoutineMeetingPlanImportResultVO;
 import com.cac.oa.routine.vo.RoutineMeetingPlanQuery;
 import com.cac.oa.routine.vo.RoutineMeetingPlanSaveRequest;
+import com.cac.oa.routine.vo.RoutineMeetingPlanStatisticsVO;
 import com.cac.oa.routine.vo.RoutineMeetingPlanVO;
 import com.cac.yiyan.common.page.PageData;
 import com.cac.yiyan.common.vo.Result;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,9 +25,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.Valid;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Api(tags = "OA-行政例会计划管理")
 @RestController
@@ -48,6 +57,33 @@ public class RoutineMeetingPlanController {
     @ApiOperation("我的反馈分页")
     public Result<PageData<RoutineMeetingPlanVO>> myFeedback(RoutineMeetingPlanQuery query) {
         return Result.ok(planService.myFeedback(query));
+    }
+
+    @GetMapping("/statistics")
+    @ApiOperation("计划统计")
+    public Result<RoutineMeetingPlanStatisticsVO> statistics() {
+        return Result.ok(planService.statistics());
+    }
+
+    @GetMapping("/import-template")
+    @ApiOperation("下载计划导入模板")
+    public ResponseEntity<byte[]> importTemplate() throws Exception {
+        byte[] content = planService.buildImportTemplate();
+        String filename = URLEncoder.encode("行政例会计划导入模板.xlsx",
+                StandardCharsets.UTF_8.name()).replace("+", "%20");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename*=UTF-8''" + filename)
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(content);
+    }
+
+    @PostMapping("/import")
+    @ApiOperation("批量导入计划")
+    public Result<RoutineMeetingPlanImportResultVO> importPlans(
+            @RequestParam("file") MultipartFile file) {
+        return Result.ok(planService.importPlans(file));
     }
 
     @GetMapping("/{id}")
