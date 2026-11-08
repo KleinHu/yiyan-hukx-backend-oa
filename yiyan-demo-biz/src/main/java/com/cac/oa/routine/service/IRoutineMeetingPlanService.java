@@ -32,6 +32,8 @@ public interface IRoutineMeetingPlanService extends IService<RoutineMeetingPlanE
 
     void deletePlan(Long id);
 
+    void updatePinned(Long id, boolean pinned);
+
     void extend(Long id, RoutineMeetingPlanExtendRequest request);
 
     void feedback(Long id, RoutineMeetingPlanFeedbackRequest request);

@@ -30,6 +30,10 @@ public class RoutineMeetingPlanSaveRequest implements Serializable {
     @ApiModelProperty("责任领导")
     private String leaderName;
 
+    @ApiModelProperty("责任科室")
+    @Size(max = 32, message = "责任科室不能超过32个字符")
+    private String responsibleDept;
+
     @ApiModelProperty("开始日期")
     @DateTimeFormat(pattern = "yyyy-MM-dd")
     private LocalDate startDate;

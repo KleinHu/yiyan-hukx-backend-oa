@@ -29,6 +29,9 @@ import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.ClientAnchor;
+import org.apache.poi.ss.usermodel.Comment;
+import org.apache.poi.ss.usermodel.Drawing;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Font;
@@ -55,13 +58,16 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
+import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -79,6 +85,8 @@ public class RoutineMeetingPlanServiceImpl
     private static final String COMPLETED_ON_TIME = "COMPLETED_ON_TIME";
     private static final String COMPLETED_OVERDUE = "COMPLETED_OVERDUE";
     private static final Set<String> ADMIN_ROLE_IDS = new HashSet<>(Arrays.asList("2", "4"));
+    private static final Set<String> RESPONSIBLE_DEPTS = new HashSet<>(Arrays.asList(
+            "技术室", "生产室", "设备室", "科研组", "质量组", "运作组", "党群组"));
     private static final String SUPER_ADMIN_ROLE = "240-oa-routine-super-admin";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Map<String, SuperAdminCache> SUPER_ADMIN_CACHE = new ConcurrentHashMap<>();
@@ -95,14 +103,14 @@ public class RoutineMeetingPlanServiceImpl
     public PageData<RoutineMeetingPlanVO> page(RoutineMeetingPlanQuery query) {
         LambdaQueryWrapper<RoutineMeetingPlanEntity> wrapper = buildQueryWrapper(query);
         applyVisibility(wrapper);
-        return queryPage(query, wrapper, false);
+        return queryPage(query, wrapper, false, true);
     }
 
     @Override
     public PageData<RoutineMeetingPlanVO> myPlans(RoutineMeetingPlanQuery query) {
         LambdaQueryWrapper<RoutineMeetingPlanEntity> wrapper = buildQueryWrapper(query);
         applyLeaderFilter(wrapper);
-        return queryPage(query, wrapper, false);
+        return queryPage(query, wrapper, false, false);
     }
 
     @Override
@@ -110,7 +118,7 @@ public class RoutineMeetingPlanServiceImpl
         LambdaQueryWrapper<RoutineMeetingPlanEntity> wrapper = buildQueryWrapper(query);
         applyLeaderFilter(wrapper);
         wrapper.eq(RoutineMeetingPlanEntity::getDraft, 0);
-        return queryPage(query, wrapper, true);
+        return queryPage(query, wrapper, true, false);
     }
 
     @Override
@@ -168,7 +176,7 @@ public class RoutineMeetingPlanServiceImpl
             Sheet sheet = workbook.createSheet("计划导入");
             String[] headers = {
                     "计划名称", "计划目标", "责任领导工号",
-                    "责任领导姓名", "开始日期", "结束日期"
+                    "责任领导姓名", "责任科室", "开始日期", "结束日期"
             };
             Row headerRow = sheet.createRow(0);
             CellStyle headerStyle = workbook.createCellStyle();
@@ -180,12 +188,23 @@ public class RoutineMeetingPlanServiceImpl
                 cell.setCellValue(headers[i]);
                 cell.setCellStyle(headerStyle);
             }
+            Drawing<?> drawing = sheet.createDrawingPatriarch();
+            ClientAnchor anchor = workbook.getCreationHelper().createClientAnchor();
+            anchor.setCol1(4);
+            anchor.setCol2(7);
+            anchor.setRow1(0);
+            anchor.setRow2(4);
+            Comment comment = drawing.createCellComment(anchor);
+            comment.setString(workbook.getCreationHelper().createRichTextString(
+                    "责任科室可选：技术室、生产室、设备室、科研组、质量组、运作组、党群组"));
+            headerRow.getCell(4).setCellComment(comment);
             sheet.setColumnWidth(0, 22 * 256);
             sheet.setColumnWidth(1, 48 * 256);
             sheet.setColumnWidth(2, 18 * 256);
             sheet.setColumnWidth(3, 18 * 256);
-            sheet.setColumnWidth(4, 14 * 256);
+            sheet.setColumnWidth(4, 16 * 256);
             sheet.setColumnWidth(5, 14 * 256);
+            sheet.setColumnWidth(6, 14 * 256);
             sheet.createFreezePane(0, 1);
             workbook.write(output);
             return output.toByteArray();
@@ -215,7 +234,7 @@ public class RoutineMeetingPlanServiceImpl
             }
             String[] expected = {
                     "计划名称", "计划目标", "责任领导工号",
-                    "责任领导姓名", "开始日期", "结束日期"
+                    "责任领导姓名", "责任科室", "开始日期", "结束日期"
             };
             Row header = sheet.getRow(0);
             for (int i = 0; i < expected.length; i++) {
@@ -238,13 +257,18 @@ public class RoutineMeetingPlanServiceImpl
                 String goal = readCellText(row.getCell(1));
                 String leaderId = readCellText(row.getCell(2));
                 String leaderName = readCellText(row.getCell(3));
+                String responsibleDept = readCellText(row.getCell(4));
                 if (!StringUtils.hasText(name)) {
                     errors.add("第" + rowNum + "行：计划名称不能为空");
                 } else if (name.length() > 60) {
                     errors.add("第" + rowNum + "行：计划名称不能超过60字");
                 }
                 if (!StringUtils.hasText(goal)) {
-                    errors.add("第" + rowNum + "行：计划目标不能为空");
+                    errors.add("第" + rowNum + "行，计划目标不能为空");
+                }
+                if (StringUtils.hasText(responsibleDept)
+                        && !RESPONSIBLE_DEPTS.contains(responsibleDept)) {
+                    errors.add("第" + rowNum + "行，责任科室必须是：技术室、生产室、设备室、科研组、质量组、运作组、党群组");
                 }
                 if (!StringUtils.hasText(leaderId) && !StringUtils.hasText(leaderName)) {
                     errors.add("第" + rowNum + "行：责任领导工号或姓名至少填写一个");
@@ -259,8 +283,8 @@ public class RoutineMeetingPlanServiceImpl
                 } else if (!StringUtils.hasText(leaderName)) {
                     leaderName = leaderId;
                 }
-                LocalDate startDate = readImportDate(row.getCell(4), rowNum, "开始日期", errors);
-                LocalDate endDate = readImportDate(row.getCell(5), rowNum, "结束日期", errors);
+                LocalDate startDate = readImportDate(row.getCell(5), rowNum, "开始日期", errors);
+                LocalDate endDate = readImportDate(row.getCell(6), rowNum, "结束日期", errors);
                 if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
                     errors.add("第" + rowNum + "行：结束日期不能早于开始日期");
                 }
@@ -273,6 +297,7 @@ public class RoutineMeetingPlanServiceImpl
                     importRow.goal = goal;
                     importRow.leaderId = leaderId;
                     importRow.leaderName = leaderName;
+                    importRow.responsibleDept = responsibleDept;
                     importRow.startDate = startDate;
                     importRow.endDate = endDate;
                     rows.add(importRow);
@@ -297,11 +322,12 @@ public class RoutineMeetingPlanServiceImpl
             request.setGoal(row.goal);
             request.setLeaderId(row.leaderId);
             request.setLeaderName(row.leaderName);
+            request.setResponsibleDept(row.responsibleDept);
             request.setStartDate(row.startDate);
             request.setEndDate(row.endDate);
             request.setDraft(false);
             try {
-                savePlan(request);
+                savePlan(request, false);
             } catch (ServiceException e) {
                 throw new ServiceException("第" + row.rowNum + "行：" + e.getMessage());
             } catch (Exception e) {
@@ -322,7 +348,7 @@ public class RoutineMeetingPlanServiceImpl
     }
 
     private boolean isBlankImportRow(Row row) {
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 7; i++) {
             if (StringUtils.hasText(readCellText(row.getCell(i)))) {
                 return false;
             }
@@ -435,6 +461,7 @@ public class RoutineMeetingPlanServiceImpl
         private String goal;
         private String leaderId;
         private String leaderName;
+        private String responsibleDept;
         private LocalDate startDate;
         private LocalDate endDate;
     }
@@ -449,8 +476,12 @@ public class RoutineMeetingPlanServiceImpl
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long savePlan(RoutineMeetingPlanSaveRequest request) {
+        return savePlan(request, true);
+    }
+
+    private Long savePlan(RoutineMeetingPlanSaveRequest request, boolean requireDept) {
         boolean draft = Boolean.TRUE.equals(request.getDraft());
-        validatePlan(request, !draft);
+        validatePlan(request, !draft, requireDept);
 
         RoutineMeetingPlanEntity plan = new RoutineMeetingPlanEntity();
         copyPlanFields(plan, request);
@@ -484,7 +515,7 @@ public class RoutineMeetingPlanServiceImpl
             if (!isCreator(plan) && !isLeader(plan) && !isAdmin()) {
                 throw new ServiceException("无权修改该草稿");
             }
-            validatePlan(request, !targetDraft);
+            validatePlan(request, !targetDraft, true);
         } else {
             if (!isLeader(plan) && !isAdmin()) {
                 throw new ServiceException("只有责任领导或管理员可以修改已发布计划");
@@ -492,7 +523,7 @@ public class RoutineMeetingPlanServiceImpl
             if (targetDraft) {
                 throw new ServiceException("已发布计划不能改回草稿");
             }
-            validatePlan(request, true);
+            validatePlan(request, true, true);
         }
 
         String oldLeaderId = plan.getLeaderId();
@@ -534,19 +565,22 @@ public class RoutineMeetingPlanServiceImpl
     @Transactional(rollbackFor = Exception.class)
     public void deletePlan(Long id) {
         RoutineMeetingPlanEntity plan = getPlan(id);
-        String status = statusOf(plan);
-        boolean allowed = isAdmin() || isLeader(plan);
-        if (Integer.valueOf(1).equals(plan.getDraft())) {
-            allowed = allowed || isCreator(plan);
-        } else if (!NOT_STARTED.equals(status)) {
-            throw new ServiceException("只有草稿或未开始计划可以删除");
-        }
+        boolean allowed = plan.getCompletedAt() == null
+                && (isCreator(plan) || isLeader(plan));
         if (!allowed) {
             throw new ServiceException("无权删除该计划");
         }
         weekMapper.delete(new LambdaQueryWrapper<RoutineMeetingPlanWeekEntity>()
                 .eq(RoutineMeetingPlanWeekEntity::getPlanId, id));
         baseMapper.deleteById(id);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updatePinned(Long id, boolean pinned) {
+        RoutineMeetingPlanEntity plan = getPlan(id);
+        plan.setPinned(pinned ? 1 : 0);
+        baseMapper.updateById(plan);
     }
 
     @Override
@@ -687,6 +721,13 @@ public class RoutineMeetingPlanServiceImpl
             return wrapper;
         }
         wrapper.like(StringUtils.hasText(query.getName()), RoutineMeetingPlanEntity::getName, query.getName());
+        if (StringUtils.hasText(query.getLeaderKeyword())) {
+            String leaderKeyword = query.getLeaderKeyword().trim();
+            wrapper.and(w -> w.like(RoutineMeetingPlanEntity::getLeaderId, leaderKeyword)
+                    .or().like(RoutineMeetingPlanEntity::getLeaderName, leaderKeyword));
+        }
+        wrapper.eq(StringUtils.hasText(query.getResponsibleDept()),
+                RoutineMeetingPlanEntity::getResponsibleDept, query.getResponsibleDept());
         if (query.getStartDate() != null) {
             wrapper.ge(RoutineMeetingPlanEntity::getEndDate, query.getStartDate());
         }
@@ -720,13 +761,28 @@ public class RoutineMeetingPlanServiceImpl
 
     private PageData<RoutineMeetingPlanVO> queryPage(RoutineMeetingPlanQuery query,
                                                      LambdaQueryWrapper<RoutineMeetingPlanEntity> wrapper,
-                                                     boolean pendingOnly) {
+                                                     boolean pendingOnly,
+                                                     boolean planManagementSort) {
         int pageNo = query != null && query.getPageNo() != null && query.getPageNo() > 0
                 ? query.getPageNo() : 1;
         int pageSize = query != null && query.getPageSize() != null && query.getPageSize() > 0
                 ? query.getPageSize() : 10;
         String status = query != null && StringUtils.hasText(query.getStatus())
                 ? normalizeStatus(query.getStatus()) : null;
+
+        if (planManagementSort) {
+            List<RoutineMeetingPlanEntity> plans = baseMapper.selectList(wrapper);
+            if (status != null) {
+                plans = plans.stream()
+                        .filter(plan -> status.equals(statusOf(plan)))
+                        .collect(Collectors.toList());
+            }
+            plans.sort(planManagementComparator());
+            long total = plans.size();
+            int from = Math.min((pageNo - 1) * pageSize, plans.size());
+            int to = Math.min(from + pageSize, plans.size());
+            return new PageData<>(buildVOs(new ArrayList<>(plans.subList(from, to))), total);
+        }
 
         if (status == null && !pendingOnly && pageSize <= 100) {
             Page<RoutineMeetingPlanEntity> resultPage = baseMapper.selectPage(
@@ -758,6 +814,34 @@ public class RoutineMeetingPlanServiceImpl
         return new PageData<>(buildVOs(new ArrayList<>(plans.subList(from, to))), total);
     }
 
+    private Comparator<RoutineMeetingPlanEntity> planManagementComparator() {
+        Collator collator = Collator.getInstance(Locale.CHINA);
+        return Comparator
+                .comparing((RoutineMeetingPlanEntity plan) -> !isPinned(plan))
+                .thenComparing((RoutineMeetingPlanEntity plan) ->
+                        !StringUtils.hasText(plan.getLeaderName()))
+                .thenComparing((RoutineMeetingPlanEntity plan) ->
+                        safeText(plan.getLeaderName()), collator)
+                .thenComparing((RoutineMeetingPlanEntity plan) ->
+                        safeText(plan.getLeaderId()))
+                .thenComparing((RoutineMeetingPlanEntity plan) -> plan.getStartDate(),
+                        Comparator.nullsLast(Comparator.<LocalDate>reverseOrder()))
+                .thenComparing((RoutineMeetingPlanEntity plan) ->
+                        safeText(plan.getName()), collator)
+                .thenComparing((RoutineMeetingPlanEntity plan) -> plan.getCreateTime(),
+                        Comparator.nullsLast(Comparator.<Date>reverseOrder()))
+                .thenComparing((RoutineMeetingPlanEntity plan) -> plan.getId(),
+                        Comparator.nullsLast(Comparator.<Long>reverseOrder()));
+    }
+
+    private boolean isPinned(RoutineMeetingPlanEntity plan) {
+        return Integer.valueOf(1).equals(plan.getPinned());
+    }
+
+    private String safeText(String value) {
+        return value == null ? "" : value;
+    }
+
     private List<RoutineMeetingPlanVO> buildVOs(List<RoutineMeetingPlanEntity> plans) {
         if (plans == null || plans.isEmpty()) {
             return new ArrayList<>();
@@ -785,6 +869,7 @@ public class RoutineMeetingPlanServiceImpl
         vo.setGoal(plan.getGoal());
         vo.setLeaderId(plan.getLeaderId());
         vo.setLeaderName(plan.getLeaderName());
+        vo.setResponsibleDept(plan.getResponsibleDept());
         vo.setCreatorId(plan.getCreatorId());
         vo.setCreatorName(plan.getCreatorName());
         vo.setStartDate(plan.getStartDate());
@@ -794,6 +879,7 @@ public class RoutineMeetingPlanServiceImpl
         vo.setProgress(plan.getProgress() == null ? 0 : plan.getProgress());
         vo.setCompletedAt(plan.getCompletedAt());
         vo.setDraft(Integer.valueOf(1).equals(plan.getDraft()));
+        vo.setPinned(isPinned(plan));
         String status = statusOf(plan);
         vo.setStatus(status);
         vo.setStatusName(statusName(status));
@@ -958,11 +1044,13 @@ public class RoutineMeetingPlanServiceImpl
         plan.setGoal(request.getGoal());
         plan.setLeaderId(request.getLeaderId());
         plan.setLeaderName(request.getLeaderName());
+        plan.setResponsibleDept(request.getResponsibleDept());
         plan.setStartDate(request.getStartDate());
         plan.setEndDate(request.getEndDate());
     }
 
-    private void validatePlan(RoutineMeetingPlanSaveRequest request, boolean requireAll) {
+    private void validatePlan(RoutineMeetingPlanSaveRequest request, boolean requireAll,
+                              boolean requireDept) {
         if (request.getStartDate() != null && request.getEndDate() != null
                 && request.getEndDate().isBefore(request.getStartDate())) {
             throw new ServiceException("结束日期不能早于开始日期");
@@ -974,13 +1062,16 @@ public class RoutineMeetingPlanServiceImpl
             return;
         }
         if (!StringUtils.hasText(request.getName())) {
-            throw new ServiceException("请输入计划名称");
+            throw new ServiceException("请填写计划名称");
         }
         if (!StringUtils.hasText(request.getGoal())) {
-            throw new ServiceException("请输入目标");
+            throw new ServiceException("请填写目标");
         }
         if (!StringUtils.hasText(request.getLeaderId())) {
             throw new ServiceException("请选择责任领导");
+        }
+        if (requireDept && !StringUtils.hasText(request.getResponsibleDept())) {
+            throw new ServiceException("请选择责任科室");
         }
         if (request.getStartDate() == null) {
             throw new ServiceException("请选择开始日期");
@@ -1012,13 +1103,10 @@ public class RoutineMeetingPlanServiceImpl
     }
 
     private boolean canDelete(RoutineMeetingPlanEntity plan, String status) {
-        if (!Integer.valueOf(1).equals(plan.getDraft()) && !NOT_STARTED.equals(status)) {
+        if (plan.getCompletedAt() != null) {
             return false;
         }
-        if (isAdmin() || isLeader(plan)) {
-            return true;
-        }
-        return Integer.valueOf(1).equals(plan.getDraft()) && isCreator(plan);
+        return isCreator(plan) || isLeader(plan);
     }
 
     private boolean canExtend(RoutineMeetingPlanEntity plan, String status) {

@@ -27,6 +27,8 @@ public class RoutineMeetingPlanEntity extends BaseEntity {
 
     private String leaderName;
 
+    private String responsibleDept;
+
     private String creatorId;
 
     private String creatorName;
@@ -44,4 +46,6 @@ public class RoutineMeetingPlanEntity extends BaseEntity {
     private Date completedAt;
 
     private Integer draft;
+
+    private Integer pinned;
 }

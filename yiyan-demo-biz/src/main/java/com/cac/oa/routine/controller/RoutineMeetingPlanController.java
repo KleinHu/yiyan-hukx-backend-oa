@@ -113,6 +113,14 @@ public class RoutineMeetingPlanController {
         return Result.ok();
     }
 
+    @PutMapping("/{id}/pinned")
+    @ApiOperation("置顶/取消置顶")
+    public Result<Void> updatePinned(@PathVariable Long id,
+                                     @RequestParam("pinned") boolean pinned) {
+        planService.updatePinned(id, pinned);
+        return Result.ok();
+    }
+
     @PutMapping("/{id}/extend")
     @ApiOperation("延期")
     public Result<Void> extend(@PathVariable Long id,

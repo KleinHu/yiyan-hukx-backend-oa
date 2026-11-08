@@ -17,6 +17,12 @@ public class RoutineMeetingPlanQuery extends PageParam {
     @ApiModelProperty("计划名称")
     private String name;
 
+    @ApiModelProperty("责任领导姓名或工号")
+    private String leaderKeyword;
+
+    @ApiModelProperty("责任科室")
+    private String responsibleDept;
+
     @ApiModelProperty("计划状态")
     private String status;
 

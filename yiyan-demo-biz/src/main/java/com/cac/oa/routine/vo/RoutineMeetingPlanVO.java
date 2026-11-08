@@ -30,6 +30,9 @@ public class RoutineMeetingPlanVO implements Serializable {
     @ApiModelProperty("责任领导")
     private String leaderName;
 
+    @ApiModelProperty("责任科室")
+    private String responsibleDept;
+
     @ApiModelProperty("创建人ID")
     private String creatorId;
 
@@ -61,6 +64,9 @@ public class RoutineMeetingPlanVO implements Serializable {
 
     @ApiModelProperty("是否草稿")
     private Boolean draft;
+
+    @ApiModelProperty("是否置顶")
+    private Boolean pinned;
 
     @ApiModelProperty("状态")
     private String status;
